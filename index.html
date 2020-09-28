@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DecentraVote</title>
+    <base href="/">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+    <link rel="icon"
+          type="image/x-icon"
+          href="">
+    <link href="https://fonts.googleapis.com/css?family=Material+Icons|Material+Icons+Outlined|Material+Icons+Two+Tone|Material+Icons+Round|Material+Icons+Sharp"
+          rel="stylesheet">
+</head>
+<body class="ev-typography">
+<app-root></app-root>
+
+<!-- Were do we get the web3? -->
+<script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js"
+        type="text/javascript">
+</script>
+
+<script>
+    const organizationAbi = [
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "owner",
+                    "type": "address"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "storageAddress",
+                    "type": "address"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "string",
+                    "name": "storageUrl",
+                    "type": "string"
+                }
+            ],
+            "name": "StorageAdded",
+            "type": "event"
+        },
+        {
+            "constant": true,
+            "inputs": [],
+            "name": "getFileHashes",
+            "outputs": [
+                {
+                    "internalType": "bytes32[]",
+                    "name": "",
+                    "type": "bytes32[]"
+                }
+            ],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }
+    ];
+    const organizationAddress = new URLSearchParams(document.location.search).get("address") || localStorage.getItem("decvo-organization");
+    const rpcServer = new URLSearchParams(document.location.search).get("server") || localStorage.getItem("decvo-server");
+
+    if (organizationAddress !== null) {
+        localStorage.setItem("decvo-organization", organizationAddress);
+    }
+    if (rpcServer !== null) {
+        localStorage.setItem("decvo-server", rpcServer);
+    }
+
+    const provider = new ethers.providers.JsonRpcProvider(rpcServer);
+    const organizationContract = new ethers.Contract(organizationAddress, organizationAbi, provider);
+
+    async function getStorageUrls() {
+        const filter = organizationContract.filters.StorageAdded(null);
+        const events = await organizationContract.queryFilter(filter, 0, 'latest');
+        return events.map(event => event.args.storageUrl)
+    }
+
+    async function getFileHashes() {
+        return await organizationContract.getFileHashes();
+    }
+
+    getStorageUrls().then((urls) => {
+        console.log(urls);
+        const url = urls[Math.floor(Math.random() * urls.length)];
+
+        getFileHashes().then((hashes) => {
+            console.log(hashes);
+            hashes = hashes.filter(item => item !== "0x2aeba80394b5a71eee5c8d54fa055ca047495a77ab8bfe8ddb69ec167b3edaff");
+            hashes.forEach(hash => createScriptElement(hash, url))
+        })
+    })
+
+    function createScriptElement(hash, url) {
+        const request = new XMLHttpRequest();
+        request.open("GET", url + "/api/storage?hash=" + hash, true);
+        request.responseType = 'text';
+        request.onload = function () {
+            if (request.readyState === request.DONE && request.status === 200) {
+                if (request.responseText.includes("application/javascript")) {
+                    const element = document.createElement("script");
+                    console.log(hash);
+                    element.innerHTML = atob(request.responseText.split(',')[1]);
+                    element.type = "text/javascript";
+                    element.defer = true;
+                    document.head.appendChild(element);
+                }
+                if (request.responseText.includes("text/css")) {
+                    console.log("css");
+                    const css = document.createElement("style");
+                    css.innerHTML = atob(request.responseText.split(',')[1]);
+                    document.head.appendChild(css);
+                }
+                if (request.responseText.includes("image/x-icon")) {
+                    console.log("icon");
+                    const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                    link.type = 'image/x-icon';
+                    link.rel = 'shortcut icon';
+                    link.innerHTML = atob(request.responseText.split(',')[1]);
+                    document.head.appendChild(link);
+                }
+
+            }
+        };
+
+        request.send(null);
+    }
+</script>
+</body>
+</html>
